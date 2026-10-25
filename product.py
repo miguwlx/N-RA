@@ -1,22 +1,16 @@
-"""Modelo de dominio de NöRA: Prenda y Compra.
-
-Las reglas de negocio viven aquí y en inventory.py, nunca en los menús.
-"""
+"Modelo de dominio de NöRA: Prenda y Compra."
 import math
 import re
 
-# Listas cerradas definidas en HU-002
 CATEGORIAS = ("Camisetas", "Pantalones", "Vestidos", "Accesorios")
 TALLAS = ("XS", "S", "M", "L", "XL", "Única")
 COLORES = ("Negro", "Blanco", "Gris", "Azul", "Rojo", "Verde",
            "Beige", "Rosado", "Vinotinto")
 
 # Código por variante: 3 letras, guion y 3 números (ejemplo: CAM-001).
-# POR CONFIRMAR: ¿las letras van siempre en mayúscula? Hoy se exigen en mayúscula.
-PATRON_CODIGO = re.compile(r"^[A-Z]{3}-\d{3}$")
+# Se acepta en minúscula ("cam-001") y se guarda siempre en mayúscula ("CAM-001"),
 
-# HU-014: poco stock = 5 unidades o menos (incluye agotadas)
-UMBRAL_POCO_STOCK = 5
+PATRON_CODIGO = re.compile(r"^[A-Za-z]{3}-[0-9]{3}$")
 
 _ENTERO = re.compile(r"^-?\d+$")
 _DECIMAL = re.compile(r"^-?\d+(\.\d+)?$")
@@ -29,7 +23,6 @@ class ErrorValidacion(Exception):
     """
 
 
-# ---------- Validaciones reutilizables ----------
 def texto_obligatorio(valor, mensaje):
     """Devuelve el texto sin espacios sobrantes; lanza ErrorValidacion si queda vacío."""
     texto = valor.strip() if isinstance(valor, str) else ""
@@ -39,13 +32,13 @@ def texto_obligatorio(valor, mensaje):
 
 
 def validar_codigo(codigo):
-    """Devuelve el código sin espacios sobrantes; lanza ErrorValidacion si está vacío
-    o no cumple el formato de 3 letras, guion y 3 números."""
+    """Devuelve el código limpio y en mayúscula ("  cam-001 " -> "CAM-001").
+    """
     codigo = texto_obligatorio(codigo, "El código no puede estar vacío.")
     if not PATRON_CODIGO.match(codigo):
         raise ErrorValidacion(
             f"El código '{codigo}' no es válido. Usa 3 letras, guion y 3 números (ejemplo: CAM-001).")
-    return codigo
+    return codigo.upper()
 
 
 def normalizar_opcion(valor, permitidos, etiqueta, adjetivo):
@@ -77,9 +70,8 @@ def convertir_precio(valor):
     return numero
 
 
-def convertir_stock(valor):
-    """Entero mayor o igual a 0 (acepta entero o texto). Lanza ErrorValidacion si no lo es."""
-    error = ErrorValidacion("El stock debe ser un número entero mayor o igual a 0.")
+def _convertir_entero(valor, minimo, error):
+    """Entero >= minimo (acepta entero o texto sin decimales); si no, lanza `error`."""
     if isinstance(valor, bool):
         raise error
     if isinstance(valor, int):
@@ -88,16 +80,35 @@ def convertir_stock(valor):
         numero = int(valor.strip())
     else:
         raise error
-    if numero < 0:
+    if numero < minimo:
         raise error
     return numero
+
+
+def convertir_stock(valor):
+    "Entero mayor o igual a 0"
+    return _convertir_entero(
+        valor, 0, ErrorValidacion("El stock debe ser un número entero mayor o igual a 0."))
+
+
+def convertir_cantidad(valor):
+    "Entero mayor que 0: unidades de una compra "
+    return _convertir_entero(
+        valor, 1, ErrorValidacion("La cantidad debe ser un número entero mayor que 0."))
+
+
+def convertir_id_compra(valor):
+    """Identificador de compra: entero mayor que 0 """
+    return _convertir_entero(
+        valor, 1,
+        ErrorValidacion("El identificador de la compra debe ser un número entero mayor que 0."))
 
 
 class Prenda:
     """Una variante vendible: una combinación de talla y color con su propio código."""
 
     def __init__(self, codigo, nombre, categoria, talla, color, precio, stock):
-        """HU-002: valida cada dato antes de aceptarlo; lanza ErrorValidacion si algo falla."""
+        
         self.codigo = validar_codigo(codigo)
         self.nombre = texto_obligatorio(nombre, "El nombre no puede estar vacío.")
         self.categoria = normalizar_opcion(categoria, CATEGORIAS, "La categoría", "válida")
@@ -107,41 +118,28 @@ class Prenda:
         self.stock = convertir_stock(stock)
 
     def esta_agotada(self):
-        """HU-003: True si el stock es 0."""
-        return self.stock == 0
-
-    def a_diccionario(self):
-        """HU-008: datos simples (para JSON) con color, precio y stock."""
-        raise NotImplementedError("HU-008")
-
-    @classmethod
-    def desde_diccionario(cls, datos):
-        """HU-013: reconstruye la prenda validando los datos leídos."""
-        raise NotImplementedError("HU-013")
-
+                return self.stock == 0
 
 class Compra:
     """Registro de una compra: guarda el precio unitario del momento."""
 
     def __init__(self, id_compra, cliente, codigo_prenda, cantidad,
                  precio_unitario, devuelta=False):
-        """HU-004: asocia la compra al nombre del cliente y congela el precio unitario."""
-        raise NotImplementedError("HU-004")
+        
+        self.id_compra = convertir_id_compra(id_compra)
+        self.cliente = texto_obligatorio(cliente, "El nombre del cliente no puede estar vacío.")
+        self.codigo_prenda = validar_codigo(codigo_prenda)
+        self.cantidad = convertir_cantidad(cantidad)
+        self.precio_unitario = convertir_precio(precio_unitario)
+        self.devuelta = bool(devuelta)
 
     @property
     def total(self):
-        """HU-004: precio_unitario x cantidad."""
-        raise NotImplementedError("HU-004")
+        """HU-004: precio_unitario x cantidad (no cambia si luego cambia el precio de la prenda)."""
+        return self.precio_unitario * self.cantidad
 
     def marcar_devuelta(self):
-        """HU-006: marca la compra como devuelta; una compra no se devuelve dos veces."""
-        raise NotImplementedError("HU-006")
-
-    def a_diccionario(self):
-        """HU-008: cliente, precio unitario, cantidad y estado de devolución."""
-        raise NotImplementedError("HU-008")
-
-    @classmethod
-    def desde_diccionario(cls, datos):
-        """HU-013: reconstruye la compra validando los datos leídos."""
-        raise NotImplementedError("HU-013")
+        
+        if self.devuelta:
+            raise ErrorValidacion(f"La compra {self.id_compra} ya fue devuelta.")
+        self.devuelta = True
