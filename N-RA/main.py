@@ -1,8 +1,4 @@
-"""NöRA - tienda de ropa (aplicación de consola).
-
-Sprint 1 - Implementado: HU-001 (ingreso por rol), HU-002 (registrar prendas),
-HU-003 (consultar el catálogo).
-"""
+"NöRA - tienda de ropa (aplicación de consola)."
 from inventory import Inventario
 from product import CATEGORIAS, COLORES, TALLAS, ErrorValidacion
 
@@ -34,7 +30,7 @@ def formatear_tabla(encabezados, filas):
 
 
 def formatear_catalogo(prendas):
-    """HU-003: catálogo como tabla; las prendas sin stock salen como AGOTADA."""
+    "Catálogo como tabla; las prendas sin stock salen como AGOTADA."
     filas = [
         (prenda.codigo, prenda.nombre, prenda.categoria, prenda.talla, prenda.color,
          f"{prenda.precio:,.2f}", str(prenda.stock),
@@ -45,8 +41,22 @@ def formatear_catalogo(prendas):
         ("Código", "Nombre", "Categoría", "Talla", "Color", "Precio", "Stock", "Estado"), filas)
 
 
+def formatear_compras(compras, inventario, con_cliente):
+    "Compras como tabla. El Admin ve además la columna Cliente."
+    encabezados = ["ID"] + (["Cliente"] if con_cliente else []) + \
+                  ["Prenda", "Cantidad", "Total", "Devuelta"]
+    filas = []
+    for compra in compras:
+        prenda = inventario.prendas[compra.codigo_prenda]
+        fila = [str(compra.id_compra)] + ([compra.cliente] if con_cliente else []) + [
+            f"{prenda.codigo} - {prenda.nombre}", str(compra.cantidad),
+            f"{compra.total:,.2f}", "Sí" if compra.devuelta else "No"]
+        filas.append(fila)
+    return formatear_tabla(encabezados, filas)
+
+
 def ver_catalogo(inventario):
-    """Muestra el catálogo completo, o un mensaje si no hay prendas registradas."""
+    "Muestra el catálogo completo, o un mensaje si no hay prendas registradas."
     prendas = inventario.listar_catalogo()
     if not prendas:
         print("No hay prendas registradas.")
@@ -56,7 +66,7 @@ def ver_catalogo(inventario):
 
 
 def filtrar_catalogo(inventario):
-    """Pide una categoría y muestra solo las prendas de esa categoría."""
+    "Pide una categoría y muestra solo las prendas de esa categoría."
     print(f"Categorías: {', '.join(CATEGORIAS)}")
     categoria = input("Categoría a consultar: ")
     try:
@@ -101,19 +111,128 @@ def registrar_prenda_desde_consola(inventario):
     print(f"Prenda registrada correctamente: {prenda.codigo} - {prenda.nombre}.")
 
 
+def pedir_prenda_existente(inventario):
+    """Pide un código hasta que exista; con 0 cancela y devuelve None."""
+    while True:
+        codigo = input("Código de la prenda (0 para cancelar): ")
+        if codigo.strip() == "0":
+            print("Operación cancelada.")
+            return None
+        try:
+            return inventario.obtener_prenda(codigo)
+        except ErrorValidacion as error:
+            print(error)
+
+
+def comprar_prenda(nombre, inventario):
+    "el Cliente elige una prenda y una cantidad."
+    print("\n--- Comprar una prenda ---")
+    prenda = pedir_prenda_existente(inventario)
+    if prenda is None:
+        return
+    print(f"{prenda.codigo} - {prenda.nombre} | Precio: {prenda.precio:,.2f} | Stock: {prenda.stock}")
+    cantidad = input("Cantidad: ")
+    try:
+        compra = inventario.comprar(nombre, prenda.codigo, cantidad)
+    except ErrorValidacion as error:
+        print(f"No se registró la compra. {error}")
+        return
+    print(f"Compra registrada: #{compra.id_compra} - {prenda.nombre} x{compra.cantidad}. "
+          f"Total: {compra.total:,.2f}")
+
+
+def ver_mis_compras(nombre, inventario):
+    "Solo las compras hechas con el nombre del cliente que ingresó."
+    compras = inventario.compras_de_cliente(nombre)
+    if not compras:
+        print("Aún no tienes compras.")
+        return
+    print()
+    print(formatear_compras(compras, inventario, con_cliente=False))
+
+def ver_todas_las_compras(inventario):
+    "Todas las compras de todos los clientes."
+    compras = inventario.listar_todas_las_compras()
+    if not compras:
+        print("No hay compras registradas.")
+        return
+    print()
+    print(formatear_compras(compras, inventario, con_cliente=True))
+
+
+def devolver_compra_desde_consola(inventario):
+    "muestra las compras y pide el identificador a devolver."
+    print("\n--- Devolver una compra ---")
+    if not inventario.listar_todas_las_compras():
+        print("No hay compras registradas.")
+        return
+    ver_todas_las_compras(inventario)
+    while True:
+        identificador = input("\nIdentificador de la compra a devolver (0 para cancelar): ")
+        if identificador.strip() == "0":
+            print("Devolución cancelada.")
+            return
+        try:
+            compra = inventario.devolver_compra(identificador)
+            break
+        except ErrorValidacion as error:
+            print(error)
+    prenda = inventario.prendas[compra.codigo_prenda]
+    print(f"Devolución registrada: compra #{compra.id_compra}. "
+          f"Stock de {prenda.codigo}: {prenda.stock}.")
+
+
+def actualizar_precio_desde_consola(inventario):
+    "Cambia el precio de una prenda existente."
+    print("\n--- Actualizar precio ---")
+    prenda = pedir_prenda_existente(inventario)
+    if prenda is None:
+        return
+    print(f"{prenda.codigo} - {prenda.nombre} | Precio actual: {prenda.precio:,.2f}")
+    nuevo_precio = input("Nuevo precio: ")
+    try:
+        inventario.actualizar_precio(prenda.codigo, nuevo_precio)
+    except ErrorValidacion as error:
+        print(f"No se actualizó el precio. {error}")
+        return
+    print(f"Precio actualizado: {prenda.codigo} ahora cuesta {prenda.precio:,.2f}.")
+
+
+def reponer_stock_desde_consola(inventario):
+    "Suma unidades al stock de una prenda existente."
+    print("\n--- Reponer stock ---")
+    prenda = pedir_prenda_existente(inventario)
+    if prenda is None:
+        return
+    print(f"{prenda.codigo} - {prenda.nombre} | Stock actual: {prenda.stock}")
+    cantidad = input("Cantidad a sumar: ")
+    try:
+        inventario.reponer_stock(prenda.codigo, cantidad)
+    except ErrorValidacion as error:
+        print(f"No se repuso el stock. {error}")
+        return
+    print(f"Stock repuesto: {prenda.codigo} ahora tiene {prenda.stock} unidades.")
+
+
 def menu_cliente(nombre, inventario):
     """Menú del Cliente. Nunca muestra opciones de Admin."""
     while True:
         print(f"\n--- Menú Cliente: {nombre} ---")
         print("1. Ver catálogo")
         print("2. Filtrar catálogo por categoría")
-        
+        print("3. Comprar una prenda")
+        print("4. Mis compras")
+
         print("0. Cerrar sesión")
         opcion = input("Elige una opción: ").strip()
         if opcion == "1":
             ver_catalogo(inventario)
         elif opcion == "2":
             filtrar_catalogo(inventario)
+        elif opcion == "3":
+            comprar_prenda(nombre, inventario)
+        elif opcion == "4":
+            ver_mis_compras(nombre, inventario)
         elif opcion == "0":
             print("Sesión cerrada.")
             return
@@ -128,6 +247,10 @@ def menu_admin(inventario):
         print("1. Registrar prenda")
         print("2. Ver catálogo")
         print("3. Filtrar catálogo por categoría")
+        print("4. Ver todas las compras")
+        print("5. Devolver una compra")
+        print("6. Actualizar precio")
+        print("7. Reponer stock")
         
         print("0. Cerrar sesión")
         opcion = input("Elige una opción: ").strip()
@@ -137,6 +260,14 @@ def menu_admin(inventario):
             ver_catalogo(inventario)
         elif opcion == "3":
             filtrar_catalogo(inventario)
+        elif opcion == "4":
+            ver_todas_las_compras(inventario)
+        elif opcion == "5":
+            devolver_compra_desde_consola(inventario)
+        elif opcion == "6":
+            actualizar_precio_desde_consola(inventario)
+        elif opcion == "7":
+            reponer_stock_desde_consola(inventario)
         elif opcion == "0":
             print("Sesión cerrada.")
             return
