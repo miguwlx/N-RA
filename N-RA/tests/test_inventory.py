@@ -1,6 +1,7 @@
-"""Pruebas del inventario: HU-002 (registrar prendas) y HU-003 (consultar catálogo).
+"""Pruebas del inventario: registro, catálogo, compras, devoluciones, mantenimiento,
+filtros y datos para reportes.
 
-Se agrega un grupo de pruebas por historia, con sus rechazos.
+Cada grupo de pruebas cubre una funcionalidad, con sus casos de rechazo.
 """
 import unittest
 
@@ -34,14 +35,14 @@ class PruebasRegistrarPrenda(unittest.TestCase):
             registrar(self.inventario, **cambios)
         self.assertEqual(self.inventario.prendas, {})
 
-    def test_c01_registro_exitoso(self):
+    def test_registro_exitoso(self):
         prenda = registrar(self.inventario)
         self.assertIn("CAM-001", self.inventario.prendas)
         self.assertEqual((prenda.codigo, prenda.nombre, prenda.categoria, prenda.talla,
                           prenda.color, prenda.precio, prenda.stock),
                          ("CAM-001", "Camiseta básica", "Camisetas", "M", "Negro", 35000.0, 10))
 
-    def test_c02_codigo_duplicado_se_rechaza_y_el_catalogo_no_cambia(self):
+    def test_codigo_duplicado_se_rechaza_y_el_catalogo_no_cambia(self):
         registrar(self.inventario)
         with self.assertRaises(ErrorValidacion):
             registrar(self.inventario, nombre="Otra camiseta", precio="99999", stock="1")
@@ -50,7 +51,7 @@ class PruebasRegistrarPrenda(unittest.TestCase):
         self.assertEqual((original.nombre, original.precio, original.stock),
                          ("Camiseta básica", 35000.0, 10))
 
-    def test_c03_codigo_o_nombre_vacio(self):
+    def test_codigo_o_nombre_vacio(self):
         for vacio in ("", "   "):
             self.assertRechazada(codigo=vacio)
             self.assertRechazada(nombre=vacio)
@@ -85,24 +86,24 @@ class PruebasRegistrarPrenda(unittest.TestCase):
         self.assertIs(self.inventario.obtener_prenda("cam-001"),
                       self.inventario.prendas["CAM-001"])
 
-    def test_c04_precio_invalido(self):
+    def test_precio_invalido(self):
         for malo in ("0", "-5", "abc", "", "1e3", "nan", "inf", 0, -1, float("nan"), True):
             self.assertRechazada(precio=malo)
 
-    def test_c05_stock_invalido(self):
+    def test_stock_invalido(self):
         for malo in ("-1", "abc", "2.5", "", "1_0", -3, 2.0, True):
             self.assertRechazada(stock=malo)
 
     def test_stock_cero_es_valido(self):
         self.assertEqual(registrar(self.inventario, stock="0").stock, 0)
 
-    def test_c06_categoria_talla_o_color_no_permitido(self):
+    def test_categoria_talla_o_color_no_permitido(self):
         self.assertRechazada(categoria="Zapatos")
         self.assertRechazada(talla="XXL")
         self.assertRechazada(color="Fucsia")
         self.assertRechazada(categoria="")
 
-    def test_c07_cada_color_valido_en_cualquier_categoria(self):
+    def test_cada_color_valido_en_cualquier_categoria(self):
         numero = 1
         for categoria in CATEGORIAS:
             for color in COLORES:
@@ -125,7 +126,7 @@ class PruebasConsultarCatalogo(unittest.TestCase):
     def setUp(self):
         self.inventario = Inventario()
 
-    def test_c01_listado_ordenado_por_codigo_con_color(self):
+    def test_listado_ordenado_por_codigo_con_color(self):
         registrar(self.inventario, codigo="PAN-002", categoria="Pantalones", color="Azul")
         registrar(self.inventario, codigo="CAM-001")
         registrar(self.inventario, codigo="VES-001", categoria="Vestidos", color="Rojo")
@@ -133,7 +134,7 @@ class PruebasConsultarCatalogo(unittest.TestCase):
         self.assertEqual([p.codigo for p in catalogo], ["CAM-001", "PAN-002", "VES-001"])
         self.assertEqual([p.color for p in catalogo], ["Negro", "Azul", "Rojo"])
 
-    def test_c02_las_prendas_agotadas_siguen_en_el_catalogo_marcadas(self):
+    def test_las_prendas_agotadas_siguen_en_el_catalogo_marcadas(self):
         registrar(self.inventario, codigo="CAM-001", stock="0")
         registrar(self.inventario, codigo="CAM-002", stock="4")
         catalogo = self.inventario.listar_catalogo()
@@ -141,7 +142,7 @@ class PruebasConsultarCatalogo(unittest.TestCase):
         self.assertTrue(catalogo[0].esta_agotada())
         self.assertFalse(catalogo[1].esta_agotada())
 
-    def test_c03_filtro_por_categoria(self):
+    def test_filtro_por_categoria(self):
         registrar(self.inventario, codigo="CAM-001")
         registrar(self.inventario, codigo="PAN-001", categoria="Pantalones")
         registrar(self.inventario, codigo="CAM-002")
@@ -149,12 +150,12 @@ class PruebasConsultarCatalogo(unittest.TestCase):
         self.assertEqual([p.codigo for p in camisetas], ["CAM-001", "CAM-002"])
         self.assertEqual(self.inventario.listar_catalogo("vestidos"), [])
 
-    def test_c03_categoria_fuera_de_la_lista_se_rechaza(self):
+    def test_categoria_fuera_de_la_lista_se_rechaza(self):
         registrar(self.inventario)
         with self.assertRaises(ErrorValidacion):
             self.inventario.listar_catalogo("Zapatos")
 
-    def test_c04_catalogo_vacio(self):
+    def test_catalogo_vacio(self):
         self.assertEqual(self.inventario.listar_catalogo(), [])
 
     def test_consultar_no_modifica_el_catalogo(self):
@@ -176,7 +177,7 @@ def inventario_con_prendas():
 
 
 class PruebasComprar(unittest.TestCase):
-    """HU-004."""
+    """Compra de prendas: stock, identificadores, total y precio congelado."""
 
     def setUp(self):
         self.inventario = inventario_con_prendas()
@@ -190,13 +191,13 @@ class PruebasComprar(unittest.TestCase):
         self.assertEqual(self.inventario.compras, {})
         self.assertEqual(self.inventario.siguiente_id_compra, 1)
 
-    def test_c01_compra_exitosa_baja_el_stock_exactamente_la_cantidad(self):
+    def test_compra_exitosa_baja_el_stock_exactamente_la_cantidad(self):
         compra = self.inventario.comprar("Ana", "CAM-001", "4")
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 6)
         self.assertIn(compra.id_compra, self.inventario.compras)
         self.assertEqual(compra.cantidad, 4)
 
-    def test_c02_identificador_unico_y_total(self):
+    def test_identificador_unico_y_total(self):
         primera = self.inventario.comprar("Ana", "CAM-001", "2")
         segunda = self.inventario.comprar("Luis", "PAN-001", "1")
         self.assertEqual((primera.id_compra, segunda.id_compra), (1, 2))
@@ -204,7 +205,7 @@ class PruebasComprar(unittest.TestCase):
         self.assertEqual(segunda.total, 80000.0)
         self.assertEqual(self.inventario.siguiente_id_compra, 3)
 
-    def test_c03_stock_insuficiente(self):
+    def test_stock_insuficiente(self):
         self.assertCompraRechazada(cantidad="11")
         self.assertCompraRechazada(codigo="PAN-001", cantidad="4")
 
@@ -216,11 +217,11 @@ class PruebasComprar(unittest.TestCase):
         self.assertEqual(self.inventario.prendas["PAN-001"].stock, 0)
         self.assertTrue(self.inventario.prendas["PAN-001"].esta_agotada())
 
-    def test_c04_prenda_inexistente(self):
+    def test_prenda_inexistente(self):
         self.assertCompraRechazada(codigo="ZZZ-999")
         self.assertCompraRechazada(codigo="")
 
-    def test_c05_cantidad_invalida(self):
+    def test_cantidad_invalida(self):
         for mala in ("0", "-1", "abc", "2.5", "", "1_0", 0, -2, 1.5, True):
             self.assertCompraRechazada(cantidad=mala)
 
@@ -232,7 +233,7 @@ class PruebasComprar(unittest.TestCase):
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 9)
         self.assertEqual(self.inventario.prendas["CAM-001"].precio, 40000.0)
 
-    def test_c06_compra_asociada_al_cliente(self):
+    def test_compra_asociada_al_cliente(self):
         compra = self.inventario.comprar("  Ana  ", "CAM-001", "1")
         self.assertEqual(compra.cliente, "Ana")
         self.assertEqual(compra.codigo_prenda, "CAM-001")
@@ -240,7 +241,7 @@ class PruebasComprar(unittest.TestCase):
     def test_cliente_vacio_se_rechaza(self):
         self.assertCompraRechazada(cliente="   ")
 
-    def test_c07_conserva_el_precio_unitario_del_momento(self):
+    def test_conserva_el_precio_unitario_del_momento(self):
         compra = self.inventario.comprar("Ana", "CAM-001", "2")
         self.assertEqual(compra.precio_unitario, 35000.0)
         self.inventario.actualizar_precio("CAM-001", "50000")
@@ -249,7 +250,7 @@ class PruebasComprar(unittest.TestCase):
 
 
 class PruebasConsultarCompras(unittest.TestCase):
-    """HU-005 (Cliente) y HU-011 (Admin)."""
+    """Consulta de compras: las de un cliente y todas (vista del Admin)."""
 
     def setUp(self):
         self.inventario = inventario_con_prendas()
@@ -257,46 +258,56 @@ class PruebasConsultarCompras(unittest.TestCase):
         self.inventario.comprar("Luis", "CAM-001", "2")    # 2
         self.inventario.comprar("Ana", "PAN-001", "1")     # 3
 
-    def test_hu005_c01_c03_solo_las_compras_del_cliente(self):
+    def test_solo_las_compras_del_cliente(self):
         compras = self.inventario.compras_de_cliente("Ana")
         self.assertEqual([c.id_compra for c in compras], [1, 3])
         self.assertTrue(all(c.cliente == "Ana" for c in compras))
 
-    def test_hu005_c02_detalle_de_la_compra(self):
+    def test_detalle_de_la_compra(self):
         compra = self.inventario.compras_de_cliente("Ana")[0]
         self.assertEqual((compra.id_compra, compra.codigo_prenda, compra.cantidad,
                           compra.total, compra.devuelta), (1, "CAM-001", 1, 35000.0, False))
 
-    def test_hu005_c04_sin_compras(self):
+    def test_cliente_sin_compras(self):
+        """Un cliente que nunca ha comprado recibe una lista vacía (no un error).
+
+        Marta no aparece en las compras del setUp (solo Ana y Luis compraron), así que
+        compras_de_cliente("Marta") debe devolver [] y el menú mostrará "Aún no tienes compras".
+        """
         self.assertEqual(self.inventario.compras_de_cliente("Marta"), [])
 
-    def test_hu005_el_nombre_se_compara_sin_importar_mayusculas(self):
+    def test_el_nombre_se_compara_sin_importar_mayusculas(self):
         for escritura in ("ana", "ANA", "  Ana "):
             self.assertEqual([c.id_compra for c in self.inventario.compras_de_cliente(escritura)],
                              [1, 3])
 
-    def test_hu005_nombre_vacio_se_rechaza(self):
+    def test_nombre_vacio_se_rechaza(self):
         for vacio in ("", "   "):
             with self.assertRaises(ErrorValidacion):
                 self.inventario.compras_de_cliente(vacio)
 
-    def test_hu011_c01_todas_ordenadas_por_identificador(self):
+    def test_todas_ordenadas_por_identificador(self):
         todas = self.inventario.listar_todas_las_compras()
         self.assertEqual([c.id_compra for c in todas], [1, 2, 3])
         self.assertEqual({c.cliente for c in todas}, {"Ana", "Luis"})
 
-    def test_hu011_c02_compra_devuelta_aparece_marcada(self):
+    def test_compra_devuelta_aparece_marcada(self):
         self.inventario.devolver_compra("2")
         estados = {c.id_compra: c.devuelta for c in self.inventario.listar_todas_las_compras()}
         self.assertEqual(estados, {1: False, 2: True, 3: False})
         self.assertTrue(self.inventario.compras_de_cliente("Luis")[0].devuelta)
 
-    def test_hu011_c03_sin_compras(self):
+    def test_todas_las_compras_sin_compras(self):
+        """Vista del Admin: un inventario sin ninguna compra devuelve una lista vacía.
+
+        Usa un Inventario() nuevo (no el del setUp, que sí tiene compras) para comprobar
+        que listar_todas_las_compras() funciona aunque todavía no se haya vendido nada.
+        """
         self.assertEqual(Inventario().listar_todas_las_compras(), [])
 
 
 class PruebasDevolverCompra(unittest.TestCase):
-    """HU-006."""
+    """Devolución de compras: stock repuesto, repetidas e inexistentes."""
 
     def setUp(self):
         self.inventario = inventario_con_prendas()
@@ -308,21 +319,21 @@ class PruebasDevolverCompra(unittest.TestCase):
             self.inventario.devolver_compra(identificador)
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, stock)
 
-    def test_c01_devolucion_exitosa(self):
+    def test_devolucion_exitosa(self):
         self.inventario.devolver_compra("1")
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 10)
         self.assertTrue(self.compra.devuelta)
 
-    def test_c01_acepta_el_identificador_como_numero(self):
+    def test_acepta_el_identificador_como_numero(self):
         self.inventario.devolver_compra(1)
         self.assertTrue(self.compra.devuelta)
 
-    def test_c02_devolucion_repetida(self):
+    def test_devolucion_repetida(self):
         self.inventario.devolver_compra("1")
         self.assertDevolucionRechazada("1")
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 10)  # no se suma dos veces
 
-    def test_c03_compra_inexistente(self):
+    def test_compra_inexistente(self):
         self.assertDevolucionRechazada("99")
         self.assertFalse(self.compra.devuelta)
 
@@ -338,7 +349,7 @@ class PruebasDevolverCompra(unittest.TestCase):
 
 
 class PruebasActualizarPrendas(unittest.TestCase):
-    """HU-007."""
+    """Mantenimiento: cambio de precio y reposición de stock."""
 
     def setUp(self):
         self.inventario = inventario_con_prendas()
@@ -349,11 +360,11 @@ class PruebasActualizarPrendas(unittest.TestCase):
             funcion(*args)
         self.assertEqual([(p.precio, p.stock) for p in self.inventario.prendas.values()], antes)
 
-    def test_c01_cambio_de_precio(self):
+    def test_cambio_de_precio(self):
         self.inventario.actualizar_precio("CAM-001", "42000.5")
         self.assertEqual(self.inventario.prendas["CAM-001"].precio, 42000.5)
 
-    def test_c02_reposicion_de_stock(self):
+    def test_reposicion_de_stock(self):
         self.inventario.reponer_stock("PAN-001", "7")
         self.assertEqual(self.inventario.prendas["PAN-001"].stock, 10)
 
@@ -361,22 +372,98 @@ class PruebasActualizarPrendas(unittest.TestCase):
         self.inventario.reponer_stock("VES-001", "5")
         self.assertFalse(self.inventario.prendas["VES-001"].esta_agotada())
 
-    def test_c03_precio_invalido_o_prenda_inexistente(self):
+    def test_precio_invalido_o_prenda_inexistente(self):
         for malo in ("0", "-3", "abc", "", "nan"):
             self.assertSinCambios(self.inventario.actualizar_precio, "CAM-001", malo)
         self.assertSinCambios(self.inventario.actualizar_precio, "ZZZ-999", "100")
 
-    def test_c03_cantidad_invalida_o_prenda_inexistente(self):
+    def test_cantidad_invalida_o_prenda_inexistente(self):
         for mala in ("0", "-3", "abc", "2.5", ""):
             self.assertSinCambios(self.inventario.reponer_stock, "CAM-001", mala)
         self.assertSinCambios(self.inventario.reponer_stock, "ZZZ-999", "5")
 
-    def test_c04_el_total_de_compras_anteriores_no_cambia(self):
+    def test_el_total_de_compras_anteriores_no_cambia(self):
         compra = self.inventario.comprar("Ana", "CAM-001", "2")
         total = compra.total
         self.inventario.actualizar_precio("CAM-001", "1")
         self.assertEqual(compra.total, total)
         self.assertEqual(self.inventario.listar_todas_las_compras()[0].total, total)
+
+
+class PruebasFiltrarCatalogo(unittest.TestCase):
+    """Filtros del catálogo por categoría, talla y color."""
+
+    def setUp(self):
+        self.inventario = Inventario()
+        registrar(self.inventario, codigo="CAM-001", talla="M", color="Negro")
+        registrar(self.inventario, codigo="PAN-001", nombre="Jean", categoria="Pantalones",
+                  talla="L", color="Azul")
+        registrar(self.inventario, codigo="CAM-002", nombre="Polo", talla="M", color="Azul")
+        registrar(self.inventario, codigo="VES-001", nombre="Vestido", categoria="Vestidos",
+                  talla="S", color="Negro")
+
+    def codigos(self, **filtros):
+        return [p.codigo for p in self.inventario.listar_catalogo(**filtros)]
+
+    def test_filtro_por_talla(self):
+        self.assertEqual(self.codigos(talla="M"), ["CAM-001", "CAM-002"])
+
+    def test_filtro_por_color(self):
+        self.assertEqual(self.codigos(color="Azul"), ["CAM-002", "PAN-001"])
+
+    def test_los_filtros_se_pueden_combinar(self):
+        self.assertEqual(self.codigos(talla="M", color="Azul"), ["CAM-002"])
+        self.assertEqual(self.codigos(categoria="Camisetas", talla="M"), ["CAM-001", "CAM-002"])
+        self.assertEqual(self.codigos(categoria="Camisetas", talla="M", color="Negro"), ["CAM-001"])
+
+    def test_los_filtros_no_distinguen_mayusculas(self):
+        self.assertEqual(self.codigos(talla="m", color="AZUL"), ["CAM-002"])
+
+    def test_talla_o_color_fuera_de_la_lista_se_rechazan(self):
+        for filtro in ({"talla": "XXL"}, {"color": "Morado"}, {"talla": ""}, {"color": "  "},
+                       {"categoria": "Zapatos"}, {"talla": "M", "color": "Morado"}):
+            with self.assertRaises(ErrorValidacion):
+                self.inventario.listar_catalogo(**filtro)
+
+    def test_sin_coincidencias_devuelve_lista_vacia(self):
+        self.assertEqual(self.codigos(talla="XL"), [])
+        self.assertEqual(self.codigos(talla="S", color="Azul"), [])
+
+    def test_sin_filtros_devuelve_todo_y_filtrar_no_modifica_el_catalogo(self):
+        antes = dict(self.inventario.prendas)
+        self.assertEqual(len(self.codigos()), 4)
+        self.codigos(talla="M", color="Azul")
+        self.assertEqual(self.inventario.prendas, antes)
+
+    def test_las_agotadas_tambien_aparecen_al_filtrar(self):
+        registrar(self.inventario, codigo="CAM-003", talla="M", color="Rojo", stock="0")
+        self.assertIn("CAM-003", self.codigos(talla="M"))
+
+
+class PruebasDatosParaReportes(unittest.TestCase):
+    """unidades_vendidas_por_prenda y prendas_con_poco_stock (datos de los reportes)."""
+
+    def setUp(self):
+        self.inventario = inventario_con_prendas()   # CAM-001: 10 · PAN-001: 3 · VES-001: 0
+
+    def test_unidades_vendidas_suman_compras_y_excluyen_devueltas(self):
+        self.inventario.comprar("Ana", "CAM-001", "2")
+        devuelta = self.inventario.comprar("Luis", "CAM-001", "3")
+        self.inventario.comprar("Ana", "PAN-001", "1")
+        self.inventario.devolver_compra(devuelta.id_compra)
+        self.assertEqual(self.inventario.unidades_vendidas_por_prenda(), {"CAM-001": 2, "PAN-001": 1})
+
+    def test_sin_compras_no_hay_unidades_vendidas(self):
+        self.assertEqual(self.inventario.unidades_vendidas_por_prenda(), {})
+
+    def test_poco_stock_incluye_el_umbral_y_las_agotadas(self):
+        self.assertEqual([p.codigo for p in self.inventario.prendas_con_poco_stock()],
+                         ["PAN-001", "VES-001"])
+        registrar(self.inventario, codigo="CAM-002", stock="5")
+        registrar(self.inventario, codigo="CAM-003", stock="6")
+        codigos = [p.codigo for p in self.inventario.prendas_con_poco_stock()]
+        self.assertIn("CAM-002", codigos)
+        self.assertNotIn("CAM-003", codigos)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,13 @@
-"""Pruebas de menús para HU-002 y HU-003 (lo que ve cada rol en consola)."""
+"""Pruebas de los menús de consola (lo que ve y puede hacer cada rol)."""
 import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import main
 from inventory import Inventario
+from storage import Almacenamiento
 
 REGISTRO_VALIDO = ["CAM-001", "Camiseta básica", "Camisetas", "M", "Negro", "35000", "10"]
 
@@ -60,7 +63,7 @@ class PruebasMenuAdmin(unittest.TestCase):
         self.assertIn("Sesión cerrada.", texto)
         self.assertEqual(self.inventario.prendas, {})
 
-    def test_hu003_c05_admin_consulta_el_catalogo_con_los_mismos_datos(self):
+    def test_admin_consulta_el_catalogo_con_los_mismos_datos(self):
         self.inventario.registrar_prenda("CAM-001", "Camiseta básica", "Camisetas",
                                          "M", "Negro", "35000", "10")
         texto = ejecutar(main.menu_admin, ["2", "0"], self.inventario)
@@ -90,20 +93,20 @@ class PruebasMenuCliente(unittest.TestCase):
         self.assertIn("AGOTADA", linea_camiseta)
 
     def test_cliente_filtra_por_categoria(self):
-        texto = ejecutar(main.menu_cliente, ["2", "Pantalones", "0"], "Ana", self.inventario)
+        texto = ejecutar(main.menu_cliente, ["2", "Pantalones", "", "", "0"], "Ana", self.inventario)
         self.assertIn("PAN-001", texto)
         self.assertNotIn("CAM-001", texto)
 
     def test_categoria_invalida_muestra_mensaje_y_el_programa_sigue(self):
-        texto = ejecutar(main.menu_cliente, ["2", "Zapatos", "0"], "Ana", self.inventario)
+        texto = ejecutar(main.menu_cliente, ["2", "Zapatos", "", "", "0"], "Ana", self.inventario)
         self.assertIn("no es válida", texto)
         self.assertIn("Sesión cerrada.", texto)
 
     def test_categoria_sin_prendas(self):
-        texto = ejecutar(main.menu_cliente, ["2", "Vestidos", "0"], "Ana", self.inventario)
-        self.assertIn("No hay prendas en la categoría Vestidos.", texto)
+        texto = ejecutar(main.menu_cliente, ["2", "Vestidos", "", "", "0"], "Ana", self.inventario)
+        self.assertIn("Ninguna prenda cumple el filtro.", texto)
 
-    def test_hu003_c04_catalogo_vacio(self):
+    def test_catalogo_vacio(self):
         texto = ejecutar(main.menu_cliente, ["1", "0"], "Ana", Inventario())
         self.assertIn("No hay prendas registradas.", texto)
 
@@ -116,7 +119,7 @@ def inventario_base():
 
 
 class PruebasMenuClienteCompras(unittest.TestCase):
-    """HU-004 y HU-005 desde el menú del Cliente."""
+    """Comprar y ver mis compras desde el menú del Cliente."""
 
     def setUp(self):
         self.inventario = inventario_base()
@@ -168,7 +171,7 @@ class PruebasMenuClienteCompras(unittest.TestCase):
         texto = ejecutar(main.menu_cliente, ["4", "0"], "Ana", self.inventario)
         self.assertIn("Aún no tienes compras.", texto)
 
-    def test_hu006_c04_hu011_c04_el_cliente_no_ve_opciones_de_admin(self):
+    def test_el_cliente_no_ve_opciones_de_admin(self):
         texto = ejecutar(main.menu_cliente, ["0"], "Ana", self.inventario)
         for prohibida in ("Devolver", "Ver todas las compras", "Actualizar precio",
                           "Reponer stock", "Registrar prenda"):
@@ -178,12 +181,12 @@ class PruebasMenuClienteCompras(unittest.TestCase):
 
 
 class PruebasMenuAdminCompras(unittest.TestCase):
-    """HU-006, HU-007 y HU-011 desde el menú del Admin."""
+    """Ver compras, devolver, cambiar precio y reponer stock desde el menú del Admin."""
 
     def setUp(self):
         self.inventario = inventario_base()
 
-    def test_hu011_ver_todas_las_compras_con_cliente_y_estado(self):
+    def test_ver_todas_las_compras_con_cliente_y_estado(self):
         self.inventario.comprar("Ana", "CAM-001", "1")
         self.inventario.comprar("Luis", "PAN-001", "2")
         self.inventario.devolver_compra("2")
@@ -193,18 +196,23 @@ class PruebasMenuAdminCompras(unittest.TestCase):
         linea_luis = [l for l in texto.splitlines() if "Luis" in l][0]
         self.assertIn("Sí", linea_luis)
 
-    def test_hu011_c03_sin_compras(self):
+    def test_ver_compras_sin_compras(self):
+        """Admin, opción 4 (Ver todas las compras) sin compras registradas.
+
+        Entradas simuladas: "4" abre el listado y "0" cierra la sesión. Debe mostrar
+        "No hay compras registradas." en lugar de una tabla vacía.
+        """
         texto = ejecutar(main.menu_admin, ["4", "0"], self.inventario)
         self.assertIn("No hay compras registradas.", texto)
 
-    def test_hu006_devolver_desde_el_menu_muestra_el_listado_primero(self):
+    def test_devolver_desde_el_menu_muestra_el_listado_primero(self):
         self.inventario.comprar("Ana", "CAM-001", "4")
         texto = ejecutar(main.menu_admin, ["5", "1", "0"], self.inventario)
-        self.assertIn("Ana", texto)  # listado de HU-011 antes de pedir el identificador
+        self.assertIn("Ana", texto)  # listado de compras antes de pedir el identificador
         self.assertIn("Devolución registrada: compra #1. Stock de CAM-001: 10.", texto)
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 10)
 
-    def test_hu006_repetida_inexistente_y_cancelar(self):
+    def test_repetida_inexistente_y_cancelar(self):
         self.inventario.comprar("Ana", "CAM-001", "4")
         self.inventario.devolver_compra("1")
         texto = ejecutar(main.menu_admin, ["5", "1", "99", "abc", "0", "0"], self.inventario)
@@ -214,27 +222,33 @@ class PruebasMenuAdminCompras(unittest.TestCase):
         self.assertIn("Devolución cancelada.", texto)
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 10)
 
-    def test_hu006_sin_compras(self):
+    def test_devolver_sin_compras(self):
+        """Admin, opción 5 (Devolver una compra) sin compras registradas.
+
+        Entradas simuladas: "5" entra a la devolución y "0" cierra la sesión. Debe avisar
+        "No hay compras registradas." y volver al menú SIN pedir el identificador,
+        porque no hay ninguna compra que se pueda devolver.
+        """
         texto = ejecutar(main.menu_admin, ["5", "0"], self.inventario)
         self.assertIn("No hay compras registradas.", texto)
         self.assertNotIn("Identificador de la compra a devolver", texto)
 
-    def test_hu007_actualizar_precio(self):
+    def test_actualizar_precio(self):
         texto = ejecutar(main.menu_admin, ["6", "CAM-001", "42000", "0"], self.inventario)
         self.assertIn("Precio actualizado: CAM-001 ahora cuesta 42,000.00.", texto)
         self.assertEqual(self.inventario.prendas["CAM-001"].precio, 42000.0)
 
-    def test_hu007_precio_invalido_no_modifica(self):
+    def test_precio_invalido_no_modifica(self):
         texto = ejecutar(main.menu_admin, ["6", "CAM-001", "abc", "0"], self.inventario)
         self.assertIn("No se actualizó el precio. El precio debe ser un número mayor que 0.", texto)
         self.assertEqual(self.inventario.prendas["CAM-001"].precio, 35000.0)
 
-    def test_hu007_reponer_stock(self):
+    def test_reponer_stock(self):
         texto = ejecutar(main.menu_admin, ["7", "PAN-001", "5", "0"], self.inventario)
         self.assertIn("Stock repuesto: PAN-001 ahora tiene 8 unidades.", texto)
         self.assertEqual(self.inventario.prendas["PAN-001"].stock, 8)
 
-    def test_hu007_cantidad_invalida_o_prenda_inexistente(self):
+    def test_cantidad_invalida_o_prenda_inexistente(self):
         texto = ejecutar(main.menu_admin, ["7", "PAN-001", "0", "7", "ZZZ-999", "0", "0"],
                          self.inventario)
         self.assertIn("No se repuso el stock. La cantidad debe ser un número entero mayor que 0.", texto)
@@ -246,6 +260,128 @@ class PruebasMenuAdminCompras(unittest.TestCase):
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 0)
         ejecutar(main.menu_admin, ["5", "1", "0"], self.inventario)
         self.assertEqual(self.inventario.prendas["CAM-001"].stock, 10)
+
+
+class PruebasFiltroEnLosMenus(unittest.TestCase):
+    """El filtro por talla y color existe para ambos roles."""
+
+    def setUp(self):
+        self.inventario = inventario_base()
+        self.inventario.registrar_prenda("CAM-002", "Polo", "Camisetas", "L", "Azul", "60000", "4")
+
+    def filtrar(self, menu, entradas, *args):
+        return ejecutar(menu, entradas, *args, self.inventario)
+
+    def test_ambos_menus_ofrecen_filtrar_el_catalogo(self):
+        self.assertIn("Filtrar catálogo", ejecutar(main.menu_cliente, ["0"], "Ana", self.inventario))
+        self.assertIn("Filtrar catálogo", ejecutar(main.menu_admin, ["0"], self.inventario))
+
+    def test_el_cliente_filtra_por_talla(self):
+        texto = ejecutar(main.menu_cliente, ["2", "", "L", "", "0"], "Ana", self.inventario)
+        self.assertIn("PAN-001", texto)
+        self.assertIn("CAM-002", texto)
+        self.assertNotIn("CAM-001", texto)
+
+    def test_el_admin_filtra_por_color(self):
+        texto = ejecutar(main.menu_admin, ["3", "", "", "Azul", "0"], self.inventario)
+        self.assertIn("PAN-001", texto)
+        self.assertIn("CAM-002", texto)
+        self.assertNotIn("CAM-001", texto)
+
+    def test_combinar_categoria_talla_y_color(self):
+        texto = ejecutar(main.menu_cliente, ["2", "camisetas", "l", "azul", "0"], "Ana", self.inventario)
+        self.assertIn("CAM-002", texto)
+        self.assertNotIn("PAN-001", texto)
+
+    def test_talla_o_color_no_permitido_muestra_mensaje_y_no_cierra(self):
+        for entradas, esperado in ((["2", "", "XXL", "", "0"], "La talla 'XXL' no es válida"),
+                                   (["2", "", "", "Morado", "0"], "El color 'Morado' no es válido")):
+            texto = ejecutar(main.menu_cliente, entradas, "Ana", self.inventario)
+            self.assertIn(esperado, texto)
+            self.assertIn("Sesión cerrada.", texto)
+
+    def test_sin_coincidencias(self):
+        texto = ejecutar(main.menu_cliente, ["2", "", "XL", "", "0"], "Ana", self.inventario)
+        self.assertIn("Ninguna prenda cumple el filtro.", texto)
+
+    def test_sin_ningun_filtro_muestra_el_catalogo_completo(self):
+        texto = ejecutar(main.menu_cliente, ["2", "", "", "", "0"], "Ana", self.inventario)
+        for codigo in ("CAM-001", "CAM-002", "PAN-001"):
+            self.assertIn(codigo, texto)
+
+    def test_catalogo_vacio_sin_filtros(self):
+        texto = ejecutar(main.menu_cliente, ["2", "", "", "", "0"], "Ana", Inventario())
+        self.assertIn("No hay prendas registradas.", texto)
+
+
+class PruebasEntradasInvalidasEnLosMenus(unittest.TestCase):
+    """Ningún texto inesperado cierra el programa."""
+
+    def setUp(self):
+        self.inventario = inventario_base()
+        self.inventario.comprar("Ana", "CAM-001", "1")
+
+    def test_opcion_desconocida_en_los_tres_menus(self):
+        for malas in (["99"], ["abc"], [""], ["-1"], ["1.5"], ["  "]):
+            principal = ejecutar(main.ciclo_principal, malas + ["3"], self.inventario, None)
+            cliente = ejecutar(main.menu_cliente, malas + ["0"], "Ana", self.inventario)
+            admin = ejecutar(main.menu_admin, malas + ["0"], self.inventario)
+            for texto in (principal, cliente, admin):
+                self.assertIn("Opción no válida. Elige una opción del menú.", texto)
+
+    def test_texto_donde_se_espera_un_numero_informa_y_sigue(self):
+        admin = ejecutar(main.menu_admin, [
+            "5", "abc", "0",                 # identificador de compra
+            "6", "CAM-001", "abc",           # precio
+            "7", "CAM-001", "abc",           # unidades a reponer
+            "1", "NUE-001", "Camisa", "Camisetas", "M", "Negro", "abc", "5",   # precio al registrar
+            "1", "NUE-001", "Camisa", "Camisetas", "M", "Negro", "100", "abc",  # stock al registrar
+            "0"], self.inventario)
+        cliente = ejecutar(main.menu_cliente, ["3", "CAM-001", "abc", "0"], "Ana", self.inventario)
+        for texto, esperados in (
+                (admin, ("El identificador de la compra debe ser un número entero",
+                         "El precio debe ser un número mayor que 0",
+                         "La cantidad debe ser un número entero mayor que 0",
+                         "El stock debe ser un número entero mayor o igual a 0")),
+                (cliente, ("La cantidad debe ser un número entero mayor que 0",))):
+            for esperado in esperados:
+                self.assertIn(esperado, texto)
+            self.assertIn("Sesión cerrada.", texto)
+        self.assertNotIn("NUE-001", self.inventario.prendas)
+
+    def test_cerrar_la_entrada_no_deja_el_programa_con_un_error_feo(self):
+        salida = io.StringIO()
+        with patch("builtins.input", side_effect=["1", EOFError()]), patch("sys.stdout", salida):
+            main.main(Almacenamiento(Path(tempfile.mkdtemp()) / "state.json"))
+        self.assertIn("Programa terminado.", salida.getvalue())
+
+    def test_ctrl_c_termina_de_forma_limpia(self):
+        salida = io.StringIO()
+        with patch("builtins.input", side_effect=KeyboardInterrupt), patch("sys.stdout", salida):
+            main.main(Almacenamiento(Path(tempfile.mkdtemp()) / "state.json"))
+        self.assertIn("Programa terminado.", salida.getvalue())
+
+
+class PruebasControlDeAccesoCompleto(unittest.TestCase):
+    """Control de acceso completo: lo que ve cada rol."""
+
+    def setUp(self):
+        self.inventario = inventario_base()
+
+    def test_el_cliente_solo_tiene_sus_cuatro_opciones(self):
+        texto = ejecutar(main.menu_cliente, ["0"], "Ana", self.inventario)
+        for permitida in ("Ver catálogo", "Filtrar catálogo", "Comprar una prenda", "Mis compras"):
+            self.assertIn(permitida, texto)
+        for prohibida in ("Registrar", "Devolver", "Ver todas las compras", "Actualizar precio",
+                          "Reponer stock", "Exportar", "reporte", "Reporte"):
+            self.assertNotIn(prohibida, texto)
+
+    def test_el_admin_tiene_todas_sus_opciones(self):
+        texto = ejecutar(main.menu_admin, ["0"], self.inventario)
+        for opcion in ("Registrar prenda", "Ver catálogo", "Filtrar catálogo", "Ver todas las compras",
+                       "Devolver una compra", "Actualizar precio", "Reponer stock",
+                       "Exportar CSV", "Ver reporte", "Cerrar sesión"):
+            self.assertIn(opcion, texto)
 
 
 if __name__ == "__main__":
